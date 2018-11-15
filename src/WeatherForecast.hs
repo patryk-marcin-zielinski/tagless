@@ -3,31 +3,35 @@ module WeatherForecast where
 import City
 import ForecastingService
 import Control.Monad.Except
+import Control.Monad.Reader
 
 askQuestion :: String -> IO String
 askQuestion str = do
     putStrLn str
     getLine
 
-fetchHost :: Config -> Host
-fetchHost = _host
+fetchHost :: ReaderT Config IO Host
+fetchHost = ReaderT $ return . _host
 
-fetchPort :: Config -> Port
-fetchPort = _port
+fetchPort :: ReaderT Config IO Port
+fetchPort =  ReaderT $ return . _port
 
-findCityByName :: String -> Either Error City
-findCityByName "Wrocław" = Right $ City "Wrocław"
-findCityByName "Cadiz" = Right $ City "Cadiz"
-findCityByName "Londyn" = Right $ City "Londyn"
-findCityByName name = Left $ UnknownCity name
+findCityByName :: String -> ExceptT Error IO City
+findCityByName "Wrocław" = return $ City "Wrocław"
+findCityByName "Cadiz" = return $ City "Cadiz"
+findCityByName "Londyn" = return $ City "Londyn"
+findCityByName name = throwError $ UnknownCity name
 
-type Forcast a = ExceptT Error IO a
+type Forcast a = ExceptT Error (ReaderT Config IO) a
 
 askForecast :: Forcast ()
 askForecast = do
-    lift $ putStrLn "What is the city"
-    potencialCity <- lift getLine
-    city <- return $ findCityByName potencialCity
---     forcast <- thirdParty city
-    lift $ putStrLn $ "City = " ++ (show city)
-
+    toForcast $ putStrLn "What is the city"
+    potencialCity <- toForcast getLine
+    host <- lift $ fetchHost
+    port <- lift $ fetchPort
+    city <- mapExceptT lift (findCityByName potencialCity)
+    forcast <- toForcast  $ return $ thirdParty host port city
+    toForcast $ putStrLn $ "City = " ++ (show forcast)
+    where
+        toForcast = lift . lift
