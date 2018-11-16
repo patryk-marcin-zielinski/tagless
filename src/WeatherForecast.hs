@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module WeatherForecast where
 
 import City
@@ -5,33 +6,29 @@ import ForecastingService
 import Control.Monad.Except
 import Control.Monad.Reader
 
-askQuestion :: String -> IO String
+askQuestion :: (MonadIO m) => String -> m String
 askQuestion str = do
-    putStrLn str
-    getLine
+    liftIO $ putStrLn str
+    liftIO $ getLine
 
-fetchHost :: ReaderT Config IO Host
-fetchHost = ReaderT $ return . _host
+fetchHost ::(MonadReader Config m) => m Host
+fetchHost = asks _host
 
-fetchPort :: ReaderT Config IO Port
-fetchPort =  ReaderT $ return . _port
+fetchPort :: (MonadReader Config m) => m Port
+fetchPort = asks _port
 
-findCityByName :: String -> ExceptT Error IO City
+findCityByName :: (MonadError Error m) =>  String -> m City
 findCityByName "Wrocław" = return $ City "Wrocław"
 findCityByName "Cadiz" = return $ City "Cadiz"
 findCityByName "Londyn" = return $ City "Londyn"
 findCityByName name = throwError $ UnknownCity name
 
-type Forcast a = ExceptT Error (ReaderT Config IO) a
 
-askForecast :: Forcast ()
+askForecast :: (MonadReader Config m, MonadIO m, MonadError Error m)  => m ()
 askForecast = do
-    toForcast $ putStrLn "What is the city"
-    potencialCity <- toForcast getLine
-    host <- lift $ fetchHost
-    port <- lift $ fetchPort
-    city <- mapExceptT lift (findCityByName potencialCity)
-    forcast <- toForcast  $ return $ thirdParty host port city
-    toForcast $ putStrLn $ "City = " ++ (show forcast)
-    where
-        toForcast = lift . lift
+    potencialCity <- askQuestion "What is the city"
+    host <- fetchHost
+    port <- fetchPort
+    city <- findCityByName potencialCity
+    forcast <- liftIO $ thirdParty host port city
+    liftIO $ putStrLn $ "City = " ++ (show forcast)
